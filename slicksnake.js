@@ -49,6 +49,84 @@ class Point {
       + Math.floor(Math.random() * 127)
   }
 }
+class Snake {
+  constructor (x, y) {
+    this.bodies = [[x, y]]
+    this.bodyReplayPosition = [0]
+    this.headHistory = []
+    this.velocity = [120, 0]
+    this._lastTime = null
+    this.oweingBodies = 5
+    this.color = Point.getColor()
+    this.radius = 5
+  }
+  get dead () {
+    return this.bodies.length === 0
+  }
+  get x () {
+    if (this.dead) {
+      throw new Error('Dead.')
+    }
+    return this.bodies[0][0]
+  }
+  get y () {
+    if (this.dead) {
+      throw new Error('Dead.')
+    }
+    return this.bodies[0][1]
+  }
+  update () {
+    if (!this.dead) {
+      let dt = 0
+      if (this._lastTime !== null) {
+        dt = ( Date.now() - this._lastTime ) / 1000
+      }
+      if (dt > 0.1) {
+        dt = 0.1
+      }
+      this._lastTime = Date.now()
+      let [ohx, ohy] = this.bodies[0]
+      let nhx = ohx + this.velocity[0] * dt
+      let nhy = ohy + this.velocity[1] * dt
+      this.headHistory.splice(0, 0, [nhx, nhy])
+      for (let i = 0; i < this.bodies.length; i ++) {
+        this.bodies[i] = this.headHistory[this.bodyReplayPosition[i]]
+        if (i > 0) {
+          if (Math.sqrt(Math.pow(this.bodies[i][0] - this.bodies[i-1][0], 2) + Math.pow(this.bodies[i][1] - this.bodies[i-1][1], 2)) >= this.radius * 1.5) {
+            this.bodyReplayPosition[i] = Math.max(this.bodyReplayPosition[i-1] + 1, this.bodyReplayPosition[i] - 1)
+            i --
+          }
+        }
+      }
+      let lbp = this.bodyReplayPosition[this.bodies.length - 1]
+      if (this.headHistory.length > lbp) {
+        if (this.oweingBodies === 0) {
+          this.headHistory.splice(lbp)
+        } else {
+          let nBodyPosition = this.headHistory[this.headHistory.length - 1]
+          let lBodyPosition = this.bodies[this.bodies.length - 1]
+          if (Math.sqrt(Math.pow(nBodyPosition[0] - lBodyPosition[0], 2) + Math.pow(nBodyPosition[1] - lBodyPosition[1], 2)) >= this.radius * 1.5) {
+            this.oweingBodies --
+            this.bodies.push(nBodyPosition)
+            this.bodyReplayPosition.push(this.headHistory.length - 1)
+          }
+        }
+      }
+    }
+  }
+  render (container) {
+    this.bodies.forEach(body => {
+      let circ = new PIXI.Graphics()
+      circ.clear()
+      circ.beginFill(this.color, 0.5)
+      circ.drawCircle(0, 0, this.radius)
+      circ.endFill()
+      circ.x = body[0]
+      circ.y = body[1]
+      container.addChild(circ)
+    })
+  }
+}
 
 class SnakeGame {
   constructor (stage) {
@@ -66,6 +144,7 @@ class SnakeGame {
     this._stage.addChild(this._welcomeContainer)
 
     this._points = []
+    this._snakes = []
     let nextPointGen = 0
     this._addUpdateHook((vw, vh) => {
       if (this._scene === 'play' && Date.now() >= nextPointGen) {
@@ -75,7 +154,17 @@ class SnakeGame {
         nextPointGen = Date.now() + 20
       }
     })
+    this._snakes.push(new Snake(0, 0))
+
+    setInterval(() => {
+      let angle = Math.random() * Math.PI * 2
+      this._snakes[0].velocity = [Math.cos(angle) * 120, Math.sin(angle) * 120]
+    }, 2500)
+    setInterval(() => {
+      this._snakes[0].oweingBodies += 30
+    }, 500)
   }
+
   get scene () {
     return this._scene
   }
@@ -144,6 +233,19 @@ class SnakeGame {
             renderMap.delete(pts)
           }
         }
+      })
+    })
+    this._addUpdateHook((vw, vh) => {
+      this._snakes.forEach(snake => {
+        snake.update()
+        let cont = renderMap.get(snake)
+        if (!cont) {
+          cont = new PIXI.Container()
+          renderMap.set(snake, cont)
+          worldContentContainer.addChild(cont)
+        }
+        cont.removeChildren()
+        snake.render(cont)
       })
     })
   }
