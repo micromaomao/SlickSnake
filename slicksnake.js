@@ -54,7 +54,7 @@ class Point {
 class Snake {
   constructor (x, y) {
     this.bodies = [[x, y]]
-    this.headHistory = []
+    this._trail = []
     this._destVelocity = [80, 0]
     this._currentVelocity = this._destVelocity
     this._lastTime = null
@@ -119,6 +119,7 @@ class Snake {
     let angle = Math.atan2(y - this.y, x - this.x)
     let speed = this.speed
     this.velocity = [Math.cos(angle) * speed, Math.sin(angle) * speed]
+    // FIXME: sine wave trap
   }
   update () {
     if (!this.dead) {
@@ -131,56 +132,68 @@ class Snake {
       }
       this._lastTime = Date.now()
 
-      let currentMag = Math.sqrt(Math.pow(this._currentVelocity[0], 2) + Math.pow(this._currentVelocity[1], 2))
-      let currentAng = Math.atan2(this._currentVelocity[1], this._currentVelocity[0])
-      let destMag = Math.sqrt(Math.pow(this._destVelocity[0], 2) + Math.pow(this._destVelocity[1], 2))
-      let destAng = Math.atan2(this._destVelocity[1], this._destVelocity[0])
-
-      let dAng = destAng - currentAng
-      if (Math.abs(dAng) >= this.accAng * udt) {
-        dAng = Math.sign(dAng) * this.accAng * udt
-      }
-      let dMag = destMag - currentMag
-      if (Math.abs(dMag) >= this.accMag * udt) {
-        dMag = Math.sign(dMag) * this.accMag * udt
-      }
-      let nAng = currentAng + dAng
-      let nMag = currentMag + dMag
-      this._currentVelocity = [Math.cos(nAng) * nMag, Math.sin(nAng) * nMag]
-
-      let maxTime = this.radius / 3 / this.speed
-      let [ohx, ohy] = this.bodies[0]
-      let historySplices = []
-      for (let t = 0; t < udt; t += maxTime) {
-        let ndt
-        if (t + maxTime > udt) {
-          ndt = udt % maxTime
-        } else {
-          ndt = maxTime
-        }
-        let cdt = t + ndt
-        let chx = ohx + this.velocity[0] * cdt
-        let chy = ohy + this.velocity[1] * cdt
-        historySplices.push([chx, chy])
-      }
-
-      Array.prototype.splice.apply(this.headHistory, [0, 0, ...(historySplices.reverse())])
-      if (this.headHistory.length === 0) {
-        this.headHistory.push(this.bodies[0])
-      }
-      
-      this._update_bodies()
+      this._updateVelocity(udt) 
+      this._updateHeadPosition(udt)
+      this._repositionBody()
     }
   }
-  _update_bodies () {
+  _updateVelocity (udt) {
+    let currentMag = Math.sqrt(Math.pow(this._currentVelocity[0], 2) + Math.pow(this._currentVelocity[1], 2))
+    let currentAng = Math.atan2(this._currentVelocity[1], this._currentVelocity[0])
+    let destMag = Math.sqrt(Math.pow(this._destVelocity[0], 2) + Math.pow(this._destVelocity[1], 2))
+    let destAng = Math.atan2(this._destVelocity[1], this._destVelocity[0])
+
+    let dAng = destAng - currentAng
+    if (Math.abs(dAng) >= this.accAng * udt) {
+      dAng = Math.sign(dAng) * this.accAng * udt
+    }
+    let dMag = destMag - currentMag
+    if (Math.abs(dMag) >= this.accMag * udt) {
+      dMag = Math.sign(dMag) * this.accMag * udt
+    }
+    let nAng = currentAng + dAng
+    let nMag = currentMag + dMag
+    this._currentVelocity = [Math.cos(nAng) * nMag, Math.sin(nAng) * nMag]
+  }
+  _updateHeadPosition (udt) {
+    let maxTime = this.radius / 3 / this.speed
+    let [ohx, ohy] = this.bodies[0]
+    let historySplices = []
+    // Keep dt small so there won't be gaps between body parts.
+    for (let t = 0; t < udt; t += maxTime) {
+      let ndt
+      if (t + maxTime > udt) {
+        ndt = udt % maxTime
+      } else {
+        ndt = maxTime
+      }
+      let cdt = t + ndt
+      let chx = ohx + this.velocity[0] * cdt
+      let chy = ohy + this.velocity[1] * cdt
+      historySplices.push([chx, chy])
+    }
+
+    // this._trail: [0] present -> pass [length]
+    Array.prototype.splice.apply(this._trail, [0, 0, ...(historySplices.reverse())])
+    if (this._trail.length === 0) {
+      this._trail.push(this.bodies[0])
+    }
+  }
+  _repositionBody () {
     let brp = 0
     for (let i = 0; i < this.bodies.length;) {
-      this.bodies[i] = this.headHistory[Math.max(0, brp - 1)]
+      this.bodies[i] = this._trail[Math.max(0, brp - 1)]
       if (i > 0) {
-        if (brp >= this.headHistory.length - 1 ||
+        // Find a suitable position for the body part.
+        // A suitable position is the position that don't overlap too much with the previous body,
+        // but still touches the previous body. In this case it's the one with the lowest possible
+        // distance to the previous body greater than 1.5 * radius.
+        if (brp >= this._trail.length - 1 ||
           Math.sqrt(Math.pow(this.bodies[i][0] - this.bodies[i-1][0], 2) + Math.pow(this.bodies[i][1] - this.bodies[i-1][1], 2))
             > this.radius * 1.5) {
-          if (brp >= this.headHistory.length - 1 && this.bodies.length - 1 !== i) {
+          if (brp >= this._trail.length - 1 && this.bodies.length - 1 !== i) {
+            // Handle strange case where all body part after are too close together.
+            // There will not be body parts too far away because dt is kept small.
             let bodiesLeft = this.bodies.length - 1 - i
             this.oweingBodies += bodiesLeft
             this.bodies.splice(i + 1, bodiesLeft)
@@ -194,13 +207,15 @@ class Snake {
       brp++
     }
     brp --
-    if (this.headHistory.length > brp) {
+    if (this._trail.length > brp) {
       if (this.oweingBodies <= 0) {
-        this.headHistory.splice(brp)
+        // Save memory.
+        this._trail.splice(brp)
         this.oweingBodies = 0
       } else if (this.oweingBodies >= 1) {
-        let nBodyPosition = this.headHistory[this.headHistory.length - 1]
+        let nBodyPosition = this._trail[this._trail.length - 1]
         let lBodyPosition = this.bodies[this.bodies.length - 1]
+        // When suitable (i.e. there's enough unused trail to add a new body), add a new body part.
         if (Math.sqrt(Math.pow(nBodyPosition[0] - lBodyPosition[0], 2) + Math.pow(nBodyPosition[1] - lBodyPosition[1], 2)) >= this.radius * 1.5) {
           this.oweingBodies --
           this.bodies.push(nBodyPosition)
