@@ -400,6 +400,11 @@ class SnakeGame {
   update () {
     let vw = this._width
     let vh = this._height
+    this._buildSnakeBush()
+    this._updateHooks.forEach(f => f(vw, vh))
+    this._welcomeContainer.renderable = this.scene === 'welcome'
+  }
+  _buildSnakeBush () {
     this._snakesBush.clear()
     let snakeBodies = []
     this._snakes.forEach(snake => {
@@ -414,8 +419,6 @@ class SnakeGame {
         snake: sbody.snake
       }
     }))
-    this._updateHooks.forEach(f => f(vw, vh))
-    this._welcomeContainer.renderable = this.scene === 'welcome'
   }
   _addUpdateHook (...hooks) {
     Array.prototype.push.apply(this._updateHooks, hooks)
