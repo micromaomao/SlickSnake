@@ -1,3 +1,5 @@
+'use strict'
+
 function normalDist(mean, sd) {
   let u = 1 - Math.random();
   let v = 1 - Math.random();
@@ -10,14 +12,14 @@ class Point {
     this.x = this.y = 0
     this.radius = 3
     this.color = Point.getColor()
-    this._appearAnimationTime = Date.now()
+    this._appearAnimationTime = Date.now() + Math.floor(Math.random() * 300)
   }
   render (container) {
     let appearProgress = Math.min(Date.now() - this._appearAnimationTime, 600) / 600
     let halfAppearProgress = Math.min(appearProgress * 2, 1)
     let circ = new PIXI.Graphics()
     circ.clear()
-    circ.beginFill(this.color, halfAppearProgress)
+    circ.beginFill(this.color, halfAppearProgress * 0.85)
     circ.drawCircle(0, 0, this.radius * halfAppearProgress)
     circ.endFill()
     if (appearProgress < 1) {
@@ -52,13 +54,16 @@ class Point {
 class Snake {
   constructor (x, y) {
     this.bodies = [[x, y]]
-    this.bodyReplayPosition = [0]
     this.headHistory = []
-    this.velocity = [120, 0]
+    this._destVelocity = [80, 0]
+    this._currentVelocity = this._destVelocity
     this._lastTime = null
     this.oweingBodies = 5
     this.color = Point.getColor()
-    this.radius = 5
+    this.color2 = this.color + 0x7f7f7f
+    this.headColor = 0x7f7f7f - this.color
+    this.radius = 7
+    this.vision = 500
   }
   get dead () {
     return this.bodies.length === 0
@@ -75,56 +80,148 @@ class Snake {
     }
     return this.bodies[0][1]
   }
+  get velocity () {
+    return this._currentVelocity
+  }
+  get speed () {
+    return Math.sqrt(Math.pow(this.velocity[0], 2) + Math.pow(this.velocity[1], 2))
+  }
+  set velocity(v) {
+    this._destVelocity = v
+  }
+  get accMag () {
+    return this.radius * 10
+  }
+  get accAng () {
+    return Math.PI * 2
+  }
+  game (visionPoints) {
+    if (visionPoints.length === 0) {
+      this.targetAt(0, 0)
+      return
+    }
+    let best = visionPoints[0]
+    let calcCost = point => {
+      let distance = Math.sqrt(Math.pow(point.x - this.x, 2) + Math.pow(point.y - this.y, 2))
+      return distance / Math.pow(point.radius, 2)
+    }
+    let minCost = calcCost(best)
+    visionPoints.forEach(point => {
+      let dis = calcCost(point)
+      if (dis < minCost) {
+        minCost = dis
+        best = point
+      }
+    })
+    this.targetAt(best.x, best.y)
+  }
+  targetAt(x, y) {
+    let angle = Math.atan2(y - this.y, x - this.x)
+    let speed = this.speed
+    this.velocity = [Math.cos(angle) * speed, Math.sin(angle) * speed]
+  }
   update () {
     if (!this.dead) {
-      let dt = 0
+      let udt = 0
       if (this._lastTime !== null) {
-        dt = ( Date.now() - this._lastTime ) / 1000
+        udt = ( Date.now() - this._lastTime ) / 1000
       }
-      if (dt > 0.1) {
-        dt = 0.1
+      if (udt > 0.1) {
+        udt = 0.1
       }
       this._lastTime = Date.now()
-      let [ohx, ohy] = this.bodies[0]
-      let nhx = ohx + this.velocity[0] * dt
-      let nhy = ohy + this.velocity[1] * dt
-      this.headHistory.splice(0, 0, [nhx, nhy])
-      for (let i = 0; i < this.bodies.length; i ++) {
-        this.bodies[i] = this.headHistory[this.bodyReplayPosition[i]]
-        if (i > 0) {
-          if (Math.sqrt(Math.pow(this.bodies[i][0] - this.bodies[i-1][0], 2) + Math.pow(this.bodies[i][1] - this.bodies[i-1][1], 2)) >= this.radius * 1.5) {
-            this.bodyReplayPosition[i] = Math.max(this.bodyReplayPosition[i-1] + 1, this.bodyReplayPosition[i] - 1)
-            i --
-          }
-        }
+
+      let currentMag = Math.sqrt(Math.pow(this._currentVelocity[0], 2) + Math.pow(this._currentVelocity[1], 2))
+      let currentAng = Math.atan2(this._currentVelocity[1], this._currentVelocity[0])
+      let destMag = Math.sqrt(Math.pow(this._destVelocity[0], 2) + Math.pow(this._destVelocity[1], 2))
+      let destAng = Math.atan2(this._destVelocity[1], this._destVelocity[0])
+
+      let dAng = destAng - currentAng
+      if (Math.abs(dAng) >= this.accAng * udt) {
+        dAng = Math.sign(dAng) * this.accAng * udt
       }
-      let lbp = this.bodyReplayPosition[this.bodies.length - 1]
-      if (this.headHistory.length > lbp) {
-        if (this.oweingBodies === 0) {
-          this.headHistory.splice(lbp)
-        } else {
-          let nBodyPosition = this.headHistory[this.headHistory.length - 1]
-          let lBodyPosition = this.bodies[this.bodies.length - 1]
-          if (Math.sqrt(Math.pow(nBodyPosition[0] - lBodyPosition[0], 2) + Math.pow(nBodyPosition[1] - lBodyPosition[1], 2)) >= this.radius * 1.5) {
-            this.oweingBodies --
-            this.bodies.push(nBodyPosition)
-            this.bodyReplayPosition.push(this.headHistory.length - 1)
+      let dMag = destMag - currentMag
+      if (Math.abs(dMag) >= this.accMag * udt) {
+        dMag = Math.sign(dMag) * this.accMag * udt
+      }
+      let nAng = currentAng + dAng
+      let nMag = currentMag + dMag
+      this._currentVelocity = [Math.cos(nAng) * nMag, Math.sin(nAng) * nMag]
+
+      let maxTime = this.radius / 6 / this.speed
+
+      if (udt <= maxTime) {
+        this._update_dt(udt)
+      } else {
+        for (let t = 0; t <= udt; t += maxTime) {
+          if (t + maxTime > udt) {
+            let ndt = udt % maxTime
+            this._update_dt(ndt)
+          } else {
+            this._update_dt(maxTime)
           }
         }
       }
     }
   }
+  _update_dt (dt) {
+    let [ohx, ohy] = this.bodies[0]
+    let nhx = ohx + this.velocity[0] * dt
+    let nhy = ohy + this.velocity[1] * dt
+
+    this.headHistory.splice(0, 0, [nhx, nhy])
+    let brp = 0
+    for (let i = 0; i < this.bodies.length;) {
+      this.bodies[i] = this.headHistory[Math.max(0, brp - 1)]
+      if (i > 0) {
+        if (brp >= this.headHistory.length - 1 ||
+          Math.sqrt(Math.pow(this.bodies[i][0] - this.bodies[i-1][0], 2) + Math.pow(this.bodies[i][1] - this.bodies[i-1][1], 2))
+            > this.radius * 1.5) {
+          if (brp >= this.headHistory.length - 1 && this.bodies.length - 1 !== i) {
+            let bodiesLeft = this.bodies.length - 1 - i
+            this.oweingBodies += bodiesLeft
+            this.bodies.splice(i + 1, bodiesLeft)
+            break
+          }
+          i ++
+        }
+      } else {
+        i ++
+      }
+      brp++
+    }
+    brp --
+    if (this.headHistory.length > brp) {
+      if (this.oweingBodies <= 0) {
+        this.headHistory.splice(brp)
+        this.oweingBodies = 0
+      } else if (this.oweingBodies >= 1) {
+        let nBodyPosition = this.headHistory[this.headHistory.length - 1]
+        let lBodyPosition = this.bodies[this.bodies.length - 1]
+        if (Math.sqrt(Math.pow(nBodyPosition[0] - lBodyPosition[0], 2) + Math.pow(nBodyPosition[1] - lBodyPosition[1], 2)) >= this.radius * 1.5) {
+          this.oweingBodies --
+          this.bodies.push(nBodyPosition)
+        }
+      }
+    }
+  }
   render (container) {
-    this.bodies.forEach(body => {
+    for (let i = this.bodies.length - 1; i >= 0; i --) {
+      let even = i % 2 === 0
+      let body = this.bodies[i]
       let circ = new PIXI.Graphics()
       circ.clear()
-      circ.beginFill(this.color, 0.5)
+      let color = even ? this.color2 : this.color
+      if (i === 0) {
+        color = this.headColor
+      }
+      circ.beginFill(color)
       circ.drawCircle(0, 0, this.radius)
       circ.endFill()
       circ.x = body[0]
       circ.y = body[1]
       container.addChild(circ)
-    })
+    }
   }
 }
 
@@ -136,6 +233,8 @@ class SnakeGame {
     this._updateHooks = []
     this._gridSpace = 30
 
+    this._contentRemoveList = new Set()
+
     this._worldContainer = new PIXI.Container()
     this._buildWorld(this._worldContainer)
     this._stage.addChild(this._worldContainer)
@@ -143,26 +242,32 @@ class SnakeGame {
     this._buildWelcome(this._welcomeContainer)
     this._stage.addChild(this._welcomeContainer)
 
-    this._points = []
+    this._renderMap = new WeakMap()
+
+    this._pointsBush = rbush()
+    this._snakesBush = rbush()
     this._snakes = []
     let nextPointGen = 0
     this._addUpdateHook((vw, vh) => {
       if (this._scene === 'play' && Date.now() >= nextPointGen) {
-        if (normalDist(this._points.length, 500) < 0) {
+        if (normalDist(this._pointsBush.all().length, 300) < 0) {
           this.newLittlePoint()
+        }
+        if (normalDist(this._snakes.length, 10) < 0) {
+          this.newSnake()
         }
         nextPointGen = Date.now() + 20
       }
     })
-    this._snakes.push(new Snake(0, 0))
-
-    setInterval(() => {
-      let angle = Math.random() * Math.PI * 2
-      this._snakes[0].velocity = [Math.cos(angle) * 120, Math.sin(angle) * 120]
-    }, 2500)
-    setInterval(() => {
-      this._snakes[0].oweingBodies += 30
-    }, 500)
+    this._addUpdateHook((vw, vh) => {
+      this._snakes.forEach(snake => {
+        let visionSearch = {minX: snake.x - snake.vision, minY: snake.y - snake.vision,
+          maxX: snake.x + snake.vision, maxY: snake.y + snake.vision}
+        let visionPoints = this._pointsBush.search(visionSearch)
+        let visionBodies = this._snakesBush.search(visionSearch)
+        snake.game(visionPoints.map(point => point.pts), visionBodies)
+      })
+    })
   }
 
   get scene () {
@@ -210,42 +315,63 @@ class SnakeGame {
     this._addUpdateHook((vw, vh) => {
       worldContentContainer.x = -this._x
       worldContentContainer.y = -this._y
+      this._contentRemoveList.forEach(ch => {
+        worldContentContainer.removeChild(ch)
+      })
+      this._contentRemoveList.clear()
     })
     container.addChild(worldContentContainer)
-    let renderMap = new WeakMap()
     this._addUpdateHook((vw, vh) => {
-      this._points.forEach(pts => {
-        if (pts.x >= this._x && pts.y >= this._y && pts.x <= this._x + vw && pts.y <= this._y + vh) {
-          let cont = renderMap.get(pts)
-          if (!cont) {
-            cont = new PIXI.Container()
-            renderMap.set(pts, cont)
-            worldContentContainer.addChild(cont)
-          }
-          cont.removeChildren()
-          cont.x = pts.x
-          cont.y = pts.y
-          pts.render(cont)
-        } else {
-          let cont = renderMap.get(pts)
-          if (cont) {
-            worldContentContainer.removeChild(cont)
-            renderMap.delete(pts)
-          }
+      this._pointsBush.search({minX: this._x, minY: this._y, maxX: this._x + vw, maxY: this._y + vh}).forEach(point => {
+        let pts = point.pts
+        let cont = this._renderMap.get(pts)
+        if (!cont) {
+          cont = new PIXI.Container()
+          this._renderMap.set(pts, cont)
+          worldContentContainer.addChild(cont)
         }
+        cont.removeChildren()
+        cont.x = pts.x
+        cont.y = pts.y
+        pts.render(cont)
       })
     })
     this._addUpdateHook((vw, vh) => {
       this._snakes.forEach(snake => {
         snake.update()
-        let cont = renderMap.get(snake)
+        let cont = this._renderMap.get(snake)
         if (!cont) {
           cont = new PIXI.Container()
-          renderMap.set(snake, cont)
+          this._renderMap.set(snake, cont)
           worldContentContainer.addChild(cont)
         }
         cont.removeChildren()
         snake.render(cont)
+
+        let headSearch = {minX: snake.x - snake.radius * 1.5, minY: snake.y - snake.radius * 1.5,
+          maxX: snake.x + snake.radius * 1.5, maxY: snake.y + snake.radius * 1.5}
+        let headCollideSearch = {minX: snake.x - snake.radius, minY: snake.y - snake.radius,
+          maxX: snake.x + snake.radius, maxY: snake.y + snake.radius}
+        let pointsEatten = this._pointsBush.search(headSearch)
+        pointsEatten.forEach(point => {
+          let pts = point.pts
+          let bodyGain = pts.radius / 7
+          this.removePoint(point)
+          snake.oweingBodies += bodyGain
+        })
+        let collides = this._snakesBush.search(headCollideSearch)
+        collides.forEach(point => {
+          if (point.snake !== snake) {
+            snake.bodies.forEach(body => {
+              let pts = new Point()
+              pts.x = body[0]
+              pts.y = body[1]
+              pts.radius = snake.radius
+              this._pointsBush.insert({minX: pts.x, minY: pts.y, maxX: pts.x, maxY: pts.y, pts: pts})
+            })
+            this.removeSnake(snake)
+          }
+        })
       })
     })
   }
@@ -256,6 +382,20 @@ class SnakeGame {
   update () {
     let vw = this._width
     let vh = this._height
+    this._snakesBush.clear()
+    let snakeBodies = []
+    this._snakes.forEach(snake => {
+      Array.prototype.push.apply(snakeBodies, snake.bodies.map(body => { return {x: body[0], y: body[1], radius: snake.radius, snake: snake} }))
+    })
+    this._snakesBush.load(snakeBodies.map(sbody => {
+      return {
+        minX: sbody.x - sbody.radius,
+        minY: sbody.y - sbody.radius,
+        maxX: sbody.x + sbody.radius,
+        maxY: sbody.y + sbody.radius,
+        snake: sbody.snake
+      }
+    }))
     this._updateHooks.forEach(f => f(vw, vh))
     this._welcomeContainer.renderable = this.scene === 'welcome'
   }
@@ -275,7 +415,37 @@ class SnakeGame {
     pts.x = x
     pts.y = y
     pts.radius = Math.ceil(Math.random() * 2 + 2)
-    this._points.push(pts)
+    this._pointsBush.insert({minX: x, minY: y, maxX: x, maxY: y, pts: pts})
+  }
+  removePoint (pts) {
+    if (pts.pts) {
+      this._pointsBush.remove(pts)
+      let container = this._renderMap.get(pts.pts)
+      this._contentRemoveList.add(container)
+      this._renderMap.delete(pts.pts)
+    } else {
+      this._pointsBush.remove(pts, (pts, point) => {
+        if (pts.pts) {
+          let t = pts
+          pts = point
+          point = t
+        }
+        return point.pts === pts
+      })
+      let container = this._renderMap.get(pts)
+      this._contentRemoveList.add(container)
+      this._renderMap.delete(pts)
+    }
+  }
+  removeSnake (snake) {
+    let idx = this._snakes.indexOf(snake)
+    if (idx < 0) {
+      return
+    }
+    this._snakes.splice(idx, 1)
+    let cont = this._renderMap.get(snake)
+    this._contentRemoveList.add(cont)
+    this._renderMap.delete(snake)
   }
   get viewX () {
     return this._x
@@ -286,6 +456,9 @@ class SnakeGame {
   move (x, y) {
     this._x += x
     this._y += y
+  }
+  newSnake () {
+    this._snakes.push(new Snake(normalDist(0, 300), normalDist(0, 300)))
   }
 }
 
