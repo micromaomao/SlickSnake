@@ -148,28 +148,31 @@ class Snake {
       let nMag = currentMag + dMag
       this._currentVelocity = [Math.cos(nAng) * nMag, Math.sin(nAng) * nMag]
 
-      let maxTime = this.radius / 6 / this.speed
-
-      if (udt <= maxTime) {
-        this._update_dt(udt)
-      } else {
-        for (let t = 0; t <= udt; t += maxTime) {
-          if (t + maxTime > udt) {
-            let ndt = udt % maxTime
-            this._update_dt(ndt)
-          } else {
-            this._update_dt(maxTime)
-          }
+      let maxTime = this.radius / 3 / this.speed
+      let [ohx, ohy] = this.bodies[0]
+      let historySplices = []
+      for (let t = 0; t < udt; t += maxTime) {
+        let ndt
+        if (t + maxTime > udt) {
+          ndt = udt % maxTime
+        } else {
+          ndt = maxTime
         }
+        let cdt = t + ndt
+        let chx = ohx + this.velocity[0] * cdt
+        let chy = ohy + this.velocity[1] * cdt
+        historySplices.push([chx, chy])
       }
+
+      Array.prototype.splice.apply(this.headHistory, [0, 0, ...(historySplices.reverse())])
+      if (this.headHistory.length === 0) {
+        this.headHistory.push(this.bodies[0])
+      }
+      
+      this._update_bodies()
     }
   }
-  _update_dt (dt) {
-    let [ohx, ohy] = this.bodies[0]
-    let nhx = ohx + this.velocity[0] * dt
-    let nhy = ohy + this.velocity[1] * dt
-
-    this.headHistory.splice(0, 0, [nhx, nhy])
+  _update_bodies () {
     let brp = 0
     for (let i = 0; i < this.bodies.length;) {
       this.bodies[i] = this.headHistory[Math.max(0, brp - 1)]
