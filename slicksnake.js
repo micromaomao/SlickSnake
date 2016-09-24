@@ -229,7 +229,7 @@ class SnakeGame {
   constructor (stage) {
     this._stage = stage
     this._width = this._height = this._x = this._y = 0
-    this._scene = 'welcome'
+    this._scene = 'play'
     this._updateHooks = []
     this._gridSpace = 30
 
@@ -519,6 +519,22 @@ function bootstrap () {
     drag = null
   })
   window.addEventListener('contextmenu', evt => evt.preventDefault())
+  window.addEventListener('touchstart', evt => {
+    if (!drag && evt.touches.length === 1) {
+      let touch = evt.touches[0]
+      drag = [touch.clientX, touch.clientY]
+    }
+  })
+  window.addEventListener('touchmove', evt => {
+    if (drag && evt.touches.length === 1) {
+      let touch = evt.touches[0]
+      instance.move(drag[0] - touch.clientX, drag[1] - touch.clientY)
+      drag = [touch.clientX, touch.clientY]
+    }
+  })
+  window.addEventListener('touchend', evt => {
+    drag = null
+  })
   onResize()
 }
 
