@@ -125,9 +125,7 @@ class Snake {
     let best = visionPoints[0]
     let calcCost = point => {
       let distance = Math.sqrt(Math.pow(point.x - this.x, 2) + Math.pow(point.y - this.y, 2))
-      let bodiesSearch = {minX: point.x - bodiesSearchBound, minY: point.y - bodiesSearchBound, maxX: point.x + bodiesSearchBound, maxY: point.y + bodiesSearchBound}
-      let bodiesNearby = distance > bodiesSearchBound ? visionBodiesBush.search(bodiesSearch) : 0
-      return ( distance / Math.pow(point.radius, 2) ) * (bodiesNearby.length * 3 + 1)
+      return distance / Math.pow(point.radius, 2)
     }
     let minCost = calcCost(best)
     visionPoints.forEach(point => {
@@ -327,7 +325,7 @@ class SnakeGame {
         if (normalDist(this._pointsBush.all().length, 300) < 0) {
           this.newLittlePoint()
         }
-        if (normalDist(this._snakes.length, 10) < 0) {
+        if (normalDist(this._snakes.length, 4) < 0) {
           this.newSnake()
         }
         nextPointGen = Date.now() + 20
