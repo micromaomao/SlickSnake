@@ -58,11 +58,13 @@ class Snake {
     this._destVelocity = [80, 0]
     this._currentVelocity = this._destVelocity
     this._lastTime = null
+    this._lastGameTime = 0
     this.oweingBodies = 5
     this.color = Point.getColor()
     this.color2 = this.color + 0x7f7f7f
     this.headColor = 0x7f7f7f - this.color
     this.radius = 7
+    this.securityFactor = this.radius * Math.random() * 10
     this.vision = 500
   }
   get dead () {
@@ -90,20 +92,42 @@ class Snake {
     this._destVelocity = v
   }
   get accMag () {
-    return this.radius * 10
+    return this.radius * 20
   }
   get accAng () {
-    return Math.PI * 2
+    return Math.PI * 4
   }
-  game (visionPoints) {
+  game (visionPoints, visionBodies) {
+    let visionBodiesBush = rbush()
+    let bodiesSearchBound = this.radius + this.securityFactor
+    visionBodiesBush.load(visionBodies)
+    let _bodiesAroundHead = visionBodiesBush.search({minX: this.x - bodiesSearchBound, minY: this.y - bodiesSearchBound, maxX: this.x + bodiesSearchBound, maxY: this.y + bodiesSearchBound})
+    let bodiesAroundHead = []
+    _bodiesAroundHead.forEach(body => {
+      if (body.snake != this) {
+        bodiesAroundHead.push(body)
+      }
+    })
+    if (bodiesAroundHead.length > 0) {
+      let angleToTurn = this._findBestAngleToTurn(bodiesAroundHead)
+      this.velocity = [Math.cos(angleToTurn) * this.speed, Math.sin(angleToTurn) * this.speed]
+      return
+    }
+
     if (visionPoints.length === 0) {
       this.targetAt(0, 0)
       return
     }
+    if (Date.now() - this._lastGameTime <= 1000) {
+      return
+    }
+    this._lastGameTime = Date.now()
     let best = visionPoints[0]
     let calcCost = point => {
       let distance = Math.sqrt(Math.pow(point.x - this.x, 2) + Math.pow(point.y - this.y, 2))
-      return distance / Math.pow(point.radius, 2)
+      let bodiesSearch = {minX: point.x - bodiesSearchBound, minY: point.y - bodiesSearchBound, maxX: point.x + bodiesSearchBound, maxY: point.y + bodiesSearchBound}
+      let bodiesNearby = distance > bodiesSearchBound ? visionBodiesBush.search(bodiesSearch) : 0
+      return ( distance / Math.pow(point.radius, 2) ) * (bodiesNearby.length * 3 + 1)
     }
     let minCost = calcCost(best)
     visionPoints.forEach(point => {
@@ -111,6 +135,9 @@ class Snake {
       if (dis < minCost) {
         minCost = dis
         best = point
+      }
+      if (Math.sqrt(Math.pow(this.x - point.x, 2) + Math.pow(this.y - point.y, 2)) <= this.radius * 2) {
+        this._lastGameTime = Date.now() - 1000
       }
     })
     this.targetAt(best.x, best.y)
@@ -120,6 +147,35 @@ class Snake {
     let speed = this.speed
     this.velocity = [Math.cos(angle) * speed, Math.sin(angle) * speed]
     // FIXME: sine wave trap
+  }
+  _findBestAngleToTurn (bodiesAroundHead) {
+    let angles = bodiesAroundHead.map(bodyBBox => {
+      let x = (bodyBBox.minX + bodyBBox.maxX) / 2
+      let y = (bodyBBox.minY + bodyBBox.maxY) / 2
+      let rx = x - this.x
+      let ry = y - this.y
+      let angle = Math.atan2(ry, rx)
+      return (angle + Math.PI) % (Math.PI * 2)
+    }).sort()
+    if (angles.length === 0) {
+      return null
+    } else if (angles.length === 1) {
+      return (angles[0] + Math.PI) % (Math.PI * 2) - Math.PI
+    }
+    let angleDiffs = []
+    for (let i = 1; i < angles.length; i ++) {
+      angleDiffs.push({diff: angles[i] - angles[i-1], mid: (angles[i] + angles[i-1]) / 2})
+    }
+    let lastAngle = angles[angles.length - 1]
+    let firstAngleContinued = angles[0] + Math.PI * 2
+    angleDiffs.push({diff: firstAngleContinued - lastAngle, mid: ((firstAngleContinued + lastAngle) / 2) % (Math.PI * 2)})
+    let maxDiff = null
+    angleDiffs.forEach(diff => {
+      if (maxDiff === null || maxDiff.diff < diff.diff) {
+        maxDiff = diff
+      }
+    })
+    return maxDiff.mid - Math.PI
   }
   update () {
     if (!this.dead) {
