@@ -7,6 +7,34 @@ function normalDist(mean, sd) {
   return nDist * sd + mean
 }
 
+function _trendAngle (currAng, destAng, turnRate) {
+  let directTurnDiff = destAng - currAng
+  let directTurnCost = Math.abs(directTurnDiff)
+  if (directTurnCost <= Math.PI) {
+    return currAng + Math.sign(directTurnDiff) * Math.min(directTurnCost, turnRate)
+  } else {
+    if (destAng > currAng) {
+      let reverseTurnCost = currAng + Math.PI * 2 - destAng
+      let nAng = currAng - Math.min(reverseTurnCost, turnRate)
+      if (nAng >= 0) {
+        return nAng
+      } else {
+        return Math.PI * 2 + nAng
+      }
+    } else {
+      let reverseTurnCost = destAng + Math.PI * 2 - currAng
+      return (currAng + Math.min(reverseTurnCost, turnRate)) % (Math.PI * 2)
+    }
+  }
+}
+function trendAngle (currAng, destAng, turnRate) {
+  // Turn them into sensible form: 0 to 2Pi (0 to 360)
+  currAng = (currAng + Math.PI) % (Math.PI * 2)
+  destAng = (destAng + Math.PI) % (Math.PI * 2)
+
+  return _trendAngle(currAng, destAng, Math.abs(turnRate)) - Math.PI
+}
+
 class Point {
   constructor () {
     this.x = this.y = 0
@@ -53,6 +81,9 @@ class Point {
 }
 class Snake {
   constructor (x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error('[Snake::constructor] Must provide x and y.')
+    }
     this.bodies = [[x, y]]
     this._trail = []
     this._destVelocity = [80, 0]
@@ -85,14 +116,25 @@ class Snake {
   get velocity () {
     return this._currentVelocity
   }
-  get speed () {
+  get velocityMagnitude () {
     return Math.sqrt(Math.pow(this.velocity[0], 2) + Math.pow(this.velocity[1], 2))
+  }
+  get velocityAngle () {
+    return Math.atan2(this.velocity[1], this.velocity[0])
+  }
+  set velocityMagnitude (destMag) {
+    let destAng = Math.atan2(this._destVelocity[1], this._destVelocity[0])
+    this.velocity = [Math.cos(destAng) * destMag, Math.sin(destAng) * destMag]
+  }
+  set velocityAngle (destAng) {
+    let destMag = Math.sqrt(Math.pow(this._destVelocity[0], 2) + Math.pow(this._destVelocity[1], 2))
+    this.velocity = [Math.cos(destAng) * destMag, Math.sin(destAng) * destMag]
   }
   set velocity(v) {
     this._destVelocity = v
   }
   get accMag () {
-    return this.radius * 20
+    return this.radius * 60
   }
   get accAng () {
     return Math.PI * 4
@@ -110,7 +152,7 @@ class Snake {
     })
     if (bodiesAroundHead.length > 0) {
       let angleToTurn = this._findBestAngleToTurn(bodiesAroundHead)
-      this.velocity = [Math.cos(angleToTurn) * this.speed, Math.sin(angleToTurn) * this.speed]
+      this.velocity = [Math.cos(angleToTurn) * this.velocityMagnitude, Math.sin(angleToTurn) * this.velocityMagnitude]
       return
     }
 
@@ -142,7 +184,7 @@ class Snake {
   }
   targetAt (x, y) {
     let angle = Math.atan2(y - this.y, x - this.x)
-    let speed = this.speed
+    let speed = this.velocityMagnitude
     this.velocity = [Math.cos(angle) * speed, Math.sin(angle) * speed]
     // FIXME: sine wave trap
   }
@@ -192,25 +234,23 @@ class Snake {
     }
   }
   _updateVelocity (udt) {
-    let currentMag = Math.sqrt(Math.pow(this._currentVelocity[0], 2) + Math.pow(this._currentVelocity[1], 2))
-    let currentAng = Math.atan2(this._currentVelocity[1], this._currentVelocity[0])
+    let currentMag = this.velocityMagnitude
+    let currentAng = this.velocityAngle
     let destMag = Math.sqrt(Math.pow(this._destVelocity[0], 2) + Math.pow(this._destVelocity[1], 2))
     let destAng = Math.atan2(this._destVelocity[1], this._destVelocity[0])
 
-    let dAng = destAng - currentAng
-    if (Math.abs(dAng) >= this.accAng * udt) {
-      dAng = Math.sign(dAng) * this.accAng * udt
-    }
     let dMag = destMag - currentMag
     if (Math.abs(dMag) >= this.accMag * udt) {
       dMag = Math.sign(dMag) * this.accMag * udt
     }
-    let nAng = currentAng + dAng
+
+    let turnRate = this.accAng * udt
+    let nAng = trendAngle(currentAng, destAng, turnRate)
     let nMag = currentMag + dMag
     this._currentVelocity = [Math.cos(nAng) * nMag, Math.sin(nAng) * nMag]
   }
   _updateHeadPosition (udt) {
-    let maxTime = this.radius / 3 / this.speed
+    let maxTime = this.radius / 3 / this.velocityMagnitude
     let [ohx, ohy] = this.bodies[0]
     let historySplices = []
     // Keep dt small so there won't be gaps between body parts.
@@ -322,10 +362,10 @@ class SnakeGame {
     let nextPointGen = 0
     this._addUpdateHook((vw, vh) => {
       if (this._scene === 'play' && Date.now() >= nextPointGen) {
-        if (normalDist(this._pointsBush.all().length, 300) < 0) {
+        if (normalDist(this._pointsBush.all().length, 700) < 0) {
           this.newLittlePoint()
         }
-        if (normalDist(this._snakes.length, 4) < 0) {
+        if (normalDist(this._snakes.length, 1) < 0) {
           this.newSnake()
         }
         nextPointGen = Date.now() + 20
@@ -532,8 +572,103 @@ class SnakeGame {
     this._x += x
     this._y += y
   }
-  newSnake () {
-    this._snakes.push(new Snake(normalDist(0, 300), normalDist(0, 300)))
+  newSnake (snake) {
+    snake = snake || new Snake(normalDist(0, 300), normalDist(0, 300))
+    this._snakes.push(snake)
+    return snake
+  }
+}
+
+class ControlledSnake extends Snake {
+  constructor () {
+    super(0, 0)
+    this._handleKeyDown = this._handleKeyDown.bind(this)
+    this._handleKeyUp = this._handleKeyUp.bind(this)
+    this._keyMap = {
+      left: 'ArrowLeft',
+      right: 'ArrowRight',
+      up: 'ArrowUp',
+      down: 'ArrowDown',
+      speed: ' '
+    }
+    this._minSpeed = 80
+    this._maxSpeed = this._minSpeed * 3
+    this._accelerating = false
+    this.turnRate = Math.PI
+  }
+  get keyMap () {
+    return Object.assign({}, this._keyMap)
+  }
+  set keyMap (x) {
+    this._keyMap = x
+    this._accelerating = false
+    this._updateSpeed()
+  }
+  get snake () {
+    return this._snake
+  }
+  get currentStateSpeed () {
+    return this.accelerating ? this.maxSpeed : this.minSpeed
+  }
+  set minSpeed (x) {
+    this._minSpeed = x
+    this._updateSpeed()
+  }
+  set maxSpeed (x) {
+    this._maxSpeed = x
+    this._updateSpeed()
+  }
+  get minSpeed () {
+    return this._minSpeed
+  }
+  get maxSpeed () {
+    return this._maxSpeed
+  }
+  get accelerating () {
+    return this._accelerating
+  }
+  set accelerating (x) {
+    this._accelerating = x
+    this._updateSpeed()
+  }
+  _updateSpeed () {
+    this.velocityMagnitude = this.currentStateSpeed
+  }
+  bindEvents (object) {
+    object.addEventListener('keydown', this._handleKeyDown)
+    object.addEventListener('keyup', this._handleKeyUp)
+  }
+  _handleKeyDown (evt) {
+    let key = evt.key
+    console.log(key)
+    if (key === this._keyMap.speed && !this.accelerating) {
+      this.accelerating = true
+    }
+    if (key === this._keyMap.up) {
+      this.turnToward(0, -1)
+    }
+    if (key === this._keyMap.down) {
+      this.turnToward(0, 1)
+    }
+    if (key === this._keyMap.left) {
+      this.turnToward(-1, 0)
+    }
+    if (key === this._keyMap.right) {
+      this.turnToward(1, 0)
+    }
+  }
+  _handleKeyUp (evt) {
+    let key = evt.key
+    if (key === this._keyMap.speed && this.accelerating) {
+      this.accelerating = false
+    }
+  }
+  game (visionPoints, visionBodies) {
+  }
+  turnToward (x, y) {
+    let angle = Math.atan2(y, x)
+    let currAng = this.velocityAngle
+    this.velocityAngle = trendAngle(currAng, angle, this.turnRate)
   }
 }
 
@@ -611,6 +746,10 @@ function bootstrap () {
     drag = null
   })
   onResize()
+
+  let player = new ControlledSnake()
+  instance.newSnake(player)
+  player.bindEvents(window)
 }
 
 bootstrap()
