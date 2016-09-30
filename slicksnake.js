@@ -365,7 +365,7 @@ class SnakeGame {
         if (normalDist(this._pointsBush.all().length, 700) < 0) {
           this.newLittlePoint()
         }
-        if (normalDist(this._snakes.length, 1) < 0) {
+        if (normalDist(this._snakes.length, 5) < 0) {
           this.newSnake()
         }
         nextPointGen = Date.now() + 20
