@@ -365,7 +365,7 @@ class SnakeGame {
         if (normalDist(this._pointsBush.all().length, 700) < 0) {
           this.newLittlePoint()
         }
-        if (normalDist(this._snakes.length, 5) < 0) {
+        if (normalDist(this._snakes.length, 2) < 0) {
           this.newSnake()
         }
         nextPointGen = Date.now() + 20
@@ -580,8 +580,8 @@ class SnakeGame {
 }
 
 class ControlledSnake extends Snake {
-  constructor () {
-    super(0, 0)
+  constructor (x, y) {
+    super(x || Math.random() * 500 - 250, y || Math.random() * 500 - 250)
     this._handleKeyDown = this._handleKeyDown.bind(this)
     this._handleKeyUp = this._handleKeyUp.bind(this)
     this._keyMap = {
@@ -746,10 +746,17 @@ function bootstrap () {
     drag = null
   })
   onResize()
+  
+  function createPlayer (keyMap) {
+    let snake = new ControlledSnake()
+    snake.keyMap = keyMap
+    instance.newSnake(snake)
+    snake.bindEvents(window)
+  }
 
-  let player = new ControlledSnake()
-  instance.newSnake(player)
-  player.bindEvents(window)
+  createPlayer({up: 'k', down: 'j', left: 'h', right: 'l', speed: 'i'})
+  createPlayer({up: 'w', down: 's', left: 'a', right: 'd', speed: 'x'})
+  createPlayer({up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', speed: ' '})
 }
 
 bootstrap()
