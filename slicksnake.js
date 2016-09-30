@@ -140,7 +140,7 @@ class Snake {
     })
     this.targetAt(best.x, best.y)
   }
-  targetAt(x, y) {
+  targetAt (x, y) {
     let angle = Math.atan2(y - this.y, x - this.x)
     let speed = this.speed
     this.velocity = [Math.cos(angle) * speed, Math.sin(angle) * speed]
